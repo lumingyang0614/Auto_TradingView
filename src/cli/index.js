@@ -18,6 +18,8 @@ import "./commands/capture.js";
 import "./commands/replay.js";
 import "./commands/drawing.js";
 import "./commands/levels.js";
+import "./commands/trendlines.js";
+import "./commands/structure.js";
 import "./commands/alerts.js";
 import "./commands/watchlist.js";
 import "./commands/layout.js";

@@ -75,6 +75,27 @@
 - `draw_sr_clear` → 只清除自動支撐/壓力線（傳 `timeframe` 只清該週期，不傳則全清）
 - CLI：`node src/cli/index.js levels draw -s BINANCE:DOGEUSDT -t 240`
 
+### 「自動畫趨勢線」
+- `draw_trendlines` → 上升趨勢線連接走高的擺動低點、下降趨勢線連接走低的擺動高點；收盤價穿越（超過 ATR 容許值）就視為失效不畫；依觸碰次數與近期程度挑每個方向最強的線，向右延伸（青色=上升、橘色=下降）
+  - 例：`symbol: "BINANCE:DOGEUSDT", timeframe: "240"`；可調 `bars`、`pivot_left/right`、`tolerance_atr`、`min_touches`、`min_span`、`max_lines`
+  - 標籤以 `AutoTL <週期>` 開頭，與支撐壓力（`AutoSR`）分開管理，重跑只取代同週期的趨勢線
+- `draw_tl_clear` → 只清除自動趨勢線（傳 `timeframe` 只清該週期）
+- CLI：`node src/cli/index.js trend draw -s BINANCE:DOGEUSDT -t 240`
+
+### 「三角收斂 / 楔形」
+- `draw_triangles` → 以趨勢線為邊界：上緣線穿過擺動高點、下緣線穿過擺動低點（任意斜率，收盤未突破），兩線收斂且交點在前方，就畫出兩條紫色邊界線
+  - 類型：對稱三角（Sym）、上升三角（Asc，平頂）、下降三角（Desc，平底）、上升楔形、下降楔形
+  - 預設：型態最長 200 根、兩線合計至少 5 次觸碰、目前寬度 ≤ 起點 70%、交點不超過型態長度 1.5 倍；回傳 `breakout_above` / `breakdown_below`（目前上下緣價位）
+- `draw_tri_clear` → 只清除自動三角線（標籤 `AutoTRI <週期>`）
+- CLI：`node src/cli/index.js triangle draw -s BINANCE:BTCUSDT -t 240`
+
+### 「一次畫完整結構」
+- `draw_structure` → 單一週期一次讀 K 線，同時畫支撐壓力 + 趨勢線 + 三角收斂（4H / 1D 用）
+- `draw_micro_structure` → 小級別（預設 15m）：只畫離現價最近的一個支撐與一個壓力（找不到時用載入 K 線的最高/最低點，標 `hi`/`lo`），再檢查兩者之間近期的 K 棒（最多 150 根、收盤都在支撐壓力之間）是否有趨勢線或三角收斂
+- `draw_watchlist_structure` → 自選清單每個標的：日線完整結構 + 15m 與 1H 微結構（預設；可用 `timeframes` / `micro_timeframes` 調整、`clear_timeframes` 清掉不再使用的週期）；很慢（每檔數秒），跑完會切回原本的圖
+- CLI：`structure draw -t 240`、`micro draw -t 15`、`scan`（自選清單；`--symbols A,B` 指定標的、`--timeframes D`、`--micro 15,60`、`--clear 240` 清掉 4H 自動線，`none` 表示跳過）
+- 自選清單的 `NASDAQ:XXX` 沒有付費數據時會被 TradingView 換成 `BATS:XXX`；批次模式只比對代號，不受影響
+
 ### 「管理警報」
 - `alert_create` → 設定價格警報（條件："crossing"、"greater_than"、"less_than"）
 - `alert_list` → 查看有效警報

@@ -7,6 +7,8 @@ import { registerDataTools } from "./tools/data.js";
 import { registerCaptureTools } from "./tools/capture.js";
 import { registerDrawingTools } from "./tools/drawing.js";
 import { registerLevelTools } from "./tools/levels.js";
+import { registerTrendlineTools } from "./tools/trendlines.js";
+import { registerStructureTools } from "./tools/structure.js";
 import { registerAlertTools } from "./tools/alerts.js";
 import { registerBatchTools } from "./tools/batch.js";
 import { registerReplayTools } from "./tools/replay.js";
@@ -59,6 +61,10 @@ Replay: replay_start → replay_step → replay_trade → replay_status → repl
 Batch: batch_run → run action across multiple symbols/timeframes
 Drawing: draw_shape → horizontal_line, trend_line, rectangle, text
 Auto S/R: draw_support_resistance → detect + draw support/resistance (symbol/timeframe optional); draw_sr_clear removes them
+Auto trend lines: draw_trendlines → detect + draw up/down trend lines (symbol/timeframe optional); draw_tl_clear removes them
+Auto triangles/wedges: draw_triangles (draw_tri_clear removes); draw_structure → S/R + trend lines + triangles for one timeframe
+Small timeframe: draw_micro_structure → nearest S/R + trend/triangle inside that range (default 15m)
+Watchlist: draw_watchlist_structure → 4H + 1D structure and 15m micro for every watchlist symbol (slow)
 Alerts: alert_create, alert_list, alert_delete
 Launch: tv_launch → auto-detect and start TradingView with CDP on any platform
 Panes: pane_list, pane_set_layout (s, 2h, 2v, 4, 6, 8), pane_focus, pane_set_symbol
@@ -81,6 +87,8 @@ registerDataTools(server);
 registerCaptureTools(server);
 registerDrawingTools(server);
 registerLevelTools(server);
+registerTrendlineTools(server);
+registerStructureTools(server);
 registerAlertTools(server);
 registerBatchTools(server);
 registerReplayTools(server);
