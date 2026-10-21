@@ -33,7 +33,7 @@ export async function setSymbol({ symbol }) {
     (function() {
       var chart = ${CHART_API};
       return new Promise(function(resolve) {
-        chart.setSymbol('${symbol.replace(/'/g, "\\'")}', {});
+        chart.setSymbol(${JSON.stringify(symbol)}, {});
         setTimeout(resolve, 500);
       });
     })()
@@ -46,7 +46,7 @@ export async function setTimeframe({ timeframe }) {
   await evaluate(`
     (function() {
       var chart = ${CHART_API};
-      chart.setResolution('${timeframe.replace(/'/g, "\\'")}', {});
+      chart.setResolution(${JSON.stringify(timeframe)}, {});
     })()
   `);
   const ready = await waitForChartReady(null, timeframe);

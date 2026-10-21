@@ -68,6 +68,13 @@
 - `draw_remove_one` → 依 ID 移除
 - `draw_clear` → 全部清除
 
+### 「自動畫支撐/壓力」
+- `draw_support_resistance` → 從 K 線找擺動高低點，依 ATR 分群成價位，畫成帶標籤的水平射線（綠=支撐、紅=壓力）
+  - 例：`symbol: "BINANCE:DOGEUSDT", timeframe: "240"`；可調 `bars`、`pivot_left/right`、`tolerance_atr`、`min_touches`、`max_levels`、`zones`
+  - 重跑只會取代**同一週期**上次自動畫的線（文字以 `AutoSR <週期>` 開頭，例如 `AutoSR 4H`、`AutoSR 1D`），不同週期可並存；日內週期為虛線、日線以上為實線；不影響手動畫的圖形
+- `draw_sr_clear` → 只清除自動支撐/壓力線（傳 `timeframe` 只清該週期，不傳則全清）
+- CLI：`node src/cli/index.js levels draw -s BINANCE:DOGEUSDT -t 240`
+
 ### 「管理警報」
 - `alert_create` → 設定價格警報（條件："crossing"、"greater_than"、"less_than"）
 - `alert_list` → 查看有效警報

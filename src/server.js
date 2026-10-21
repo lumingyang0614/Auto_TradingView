@@ -6,6 +6,7 @@ import { registerPineTools } from "./tools/pine.js";
 import { registerDataTools } from "./tools/data.js";
 import { registerCaptureTools } from "./tools/capture.js";
 import { registerDrawingTools } from "./tools/drawing.js";
+import { registerLevelTools } from "./tools/levels.js";
 import { registerAlertTools } from "./tools/alerts.js";
 import { registerBatchTools } from "./tools/batch.js";
 import { registerReplayTools } from "./tools/replay.js";
@@ -57,6 +58,7 @@ Screenshots: capture_screenshot → regions: "full", "chart", "strategy_tester"
 Replay: replay_start → replay_step → replay_trade → replay_status → replay_stop
 Batch: batch_run → run action across multiple symbols/timeframes
 Drawing: draw_shape → horizontal_line, trend_line, rectangle, text
+Auto S/R: draw_support_resistance → detect + draw support/resistance (symbol/timeframe optional); draw_sr_clear removes them
 Alerts: alert_create, alert_list, alert_delete
 Launch: tv_launch → auto-detect and start TradingView with CDP on any platform
 Panes: pane_list, pane_set_layout (s, 2h, 2v, 4, 6, 8), pane_focus, pane_set_symbol
@@ -78,6 +80,7 @@ registerPineTools(server);
 registerDataTools(server);
 registerCaptureTools(server);
 registerDrawingTools(server);
+registerLevelTools(server);
 registerAlertTools(server);
 registerBatchTools(server);
 registerReplayTools(server);
