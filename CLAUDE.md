@@ -90,10 +90,10 @@
 - CLI：`node src/cli/index.js triangle draw -s BINANCE:BTCUSDT -t 240`
 
 ### 「一次畫完整結構」
-- `draw_structure` → 單一週期一次讀 K 線，同時畫支撐壓力 + 趨勢線 + 三角收斂（4H / 1D 用）
+- `draw_structure` → 單一週期一次讀 K 線，同時畫支撐壓力 + 趨勢線 + 三角收斂（1D / 1W 用）
 - `draw_micro_structure` → 小級別（預設 15m）：只畫離現價最近的一個支撐與一個壓力（找不到時用載入 K 線的最高/最低點，標 `hi`/`lo`），再檢查兩者之間近期的 K 棒（最多 150 根、收盤都在支撐壓力之間）是否有趨勢線或三角收斂
-- `draw_watchlist_structure` → 自選清單每個標的：日線完整結構 + 15m 與 1H 微結構（預設；可用 `timeframes` / `micro_timeframes` 調整、`clear_timeframes` 清掉不再使用的週期）；很慢（每檔數秒），跑完會切回原本的圖
-- CLI：`structure draw -t 240`、`micro draw -t 15`、`scan`（自選清單；`--symbols A,B` 指定標的、`--timeframes D`、`--micro 15,60`、`--clear 240` 清掉 4H 自動線，`none` 表示跳過）
+- `draw_watchlist_structure` → 自選清單每個標的：日線與週線完整結構 + 15m 與 1H 微結構（預設；可用 `timeframes` / `micro_timeframes` 調整、`clear_timeframes` 清掉不再使用的週期）；很慢（每檔數秒），跑完會切回原本的圖
+- CLI：`structure draw -t 240`、`micro draw -t 15`、`scan`（自選清單；`--symbols A,B` 指定標的、`--timeframes D,W`、`--micro 15,60`、`--clear 240` 清掉 4H 自動線，`none` 表示跳過）
 - 自選清單的 `NASDAQ:XXX` 沒有付費數據時會被 TradingView 換成 `BATS:XXX`；批次模式只比對代號，不受影響
 
 ### 「管理警報」

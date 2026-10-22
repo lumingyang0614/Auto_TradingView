@@ -72,10 +72,10 @@ register('micro', {
 const tfList = v => (v === 'none' ? [] : list(v));
 
 register('scan', {
-  description: 'Draw structure for every watchlist symbol (1D + 15m/1H micro)',
+  description: 'Draw structure for every watchlist symbol (1D/1W + 15m/1H micro)',
   options: {
     symbols: { type: 'string', description: 'Comma-separated symbols instead of the watchlist' },
-    timeframes: { type: 'string', description: 'Comma-separated full-structure timeframes (default D; "none" to skip)' },
+    timeframes: { type: 'string', description: 'Comma-separated full-structure timeframes (default D,W; "none" to skip)' },
     micro: { type: 'string', description: 'Comma-separated micro timeframes (default 15,60; "none" to skip)' },
     clear: { type: 'string', description: 'Comma-separated timeframes whose auto drawings to remove, e.g. 240' },
   },

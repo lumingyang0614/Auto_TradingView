@@ -1,7 +1,7 @@
 /**
  * Composite chart structure: everything for one timeframe from a single bar load.
  *
- * drawStructure()  — S/R levels + trend lines + triangles (meant for 4H / 1D).
+ * drawStructure()  — S/R levels + trend lines + triangles (meant for 1D / 1W).
  * computeMicro()   — small-timeframe view (default 15m): only the nearest support
  *                    and resistance, then trend lines / triangles found in the
  *                    recent bars that have stayed between those two levels.
@@ -198,12 +198,12 @@ function summarize(res) {
 
 /**
  * Draw structure for every watchlist symbol (or `symbols`): full structure on
- * `timeframes` (default 1D) plus the micro view on each of `micro_timeframes`
+ * `timeframes` (default 1D and 1W) plus the micro view on each of `micro_timeframes`
  * (default 15m and 1H). Auto drawings of `clear_timeframes` are removed (e.g.
  * a timeframe no longer scanned). Failures are recorded per symbol and do not
  * stop the run. The chart is returned to its original symbol and timeframe.
  */
-export async function drawWatchlist({ symbols, timeframes = ['D'], micro_timeframes = ['15', '60'], clear_timeframes = [] } = {}) {
+export async function drawWatchlist({ symbols, timeframes = ['D', 'W'], micro_timeframes = ['15', '60'], clear_timeframes = [] } = {}) {
   const list = symbols?.length ? symbols : (await watchlist.get()).symbols.map(s => s.symbol);
   if (!list.length) throw new Error('Watchlist is empty or the watchlist panel is closed');
   const original = await chart.getState();

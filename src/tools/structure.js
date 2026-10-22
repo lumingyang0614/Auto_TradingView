@@ -28,7 +28,7 @@ export function registerStructureTools(server) {
     timeframe: z.string().optional().describe('Only clear this timeframe, e.g. "240", "D". Omit to clear all.'),
   }, run(({ timeframe }) => tri.clearTriangles({ timeframe })));
 
-  server.tool('draw_structure', 'Draw support/resistance levels, trend lines and triangles for one timeframe in one pass (meant for 4H / 1D). Replaces previous auto drawings of that timeframe.', {
+  server.tool('draw_structure', 'Draw support/resistance levels, trend lines and triangles for one timeframe in one pass (meant for 1D / 1W). Replaces previous auto drawings of that timeframe.', {
     ...common,
   }, run(args => core.drawStructure(args)));
 
@@ -38,9 +38,9 @@ export function registerStructureTools(server) {
     min_range_bars: z.coerce.number().int().min(10).optional().describe('Minimum bars inside the range to look for patterns (default 30)'),
   }, run(args => core.drawMicro(args)));
 
-  server.tool('draw_watchlist_structure', 'For every watchlist symbol (or the given symbols): draw full structure (S/R, trend lines, triangles) on 1D plus the micro view on 15m and 1H. Slow — several seconds per symbol. Restores the original chart afterwards.', {
+  server.tool('draw_watchlist_structure', 'For every watchlist symbol (or the given symbols): draw full structure (S/R, trend lines, triangles) on 1D and 1W plus the micro view on 15m and 1H. Slow — several seconds per symbol. Restores the original chart afterwards.', {
     symbols: z.array(z.string()).optional().describe('Symbols to process instead of the watchlist'),
-    timeframes: z.array(z.string()).optional().describe('Full-structure timeframes (default ["D"]; [] to skip)'),
+    timeframes: z.array(z.string()).optional().describe('Full-structure timeframes (default ["D", "W"]; [] to skip)'),
     micro_timeframes: z.array(z.string()).optional().describe('Micro view timeframes (default ["15", "60"]; [] to skip)'),
     clear_timeframes: z.array(z.string()).optional().describe('Remove auto drawings of these timeframes, e.g. ["240"]'),
   }, run(args => core.drawWatchlist(args)));
