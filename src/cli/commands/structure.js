@@ -9,6 +9,7 @@ const chartOptions = {
   symbol: { type: 'string', short: 's', description: 'Symbol, e.g. BINANCE:DOGEUSDT' },
   timeframe: { type: 'string', short: 't', description: 'Timeframe, e.g. 15, 240, D' },
   bars: { type: 'string', short: 'n', description: 'Bars to analyze (default 500)' },
+  days: { type: 'string', description: 'Calendar days to analyze instead of bars (daily default 730)' },
   'pivot-left': { type: 'string', description: 'Bars left of pivot' },
   'pivot-right': { type: 'string', description: 'Bars right of pivot' },
   tolerance: { type: 'string', description: 'Touch/break tolerance in ATR (default 0.5)' },
@@ -18,6 +19,7 @@ const chartArgs = opts => ({
   symbol: opts.symbol,
   timeframe: opts.timeframe,
   bars: num(opts.bars),
+  days: num(opts.days),
   pivot_left: num(opts['pivot-left']),
   pivot_right: num(opts['pivot-right']),
   tolerance_atr: num(opts.tolerance),
@@ -72,11 +74,11 @@ register('micro', {
 const tfList = v => (v === 'none' ? [] : list(v));
 
 register('scan', {
-  description: 'Draw structure for every watchlist symbol (1D/1W + 15m/1H micro)',
+  description: 'Draw structure for every watchlist symbol (1D/1W + 1H micro)',
   options: {
     symbols: { type: 'string', description: 'Comma-separated symbols instead of the watchlist' },
     timeframes: { type: 'string', description: 'Comma-separated full-structure timeframes (default D,W; "none" to skip)' },
-    micro: { type: 'string', description: 'Comma-separated micro timeframes (default 15,60; "none" to skip)' },
+    micro: { type: 'string', description: 'Comma-separated micro timeframes (default 60; "none" to skip)' },
     clear: { type: 'string', description: 'Comma-separated timeframes whose auto drawings to remove, e.g. 240' },
   },
   handler: (opts) => core.drawWatchlist({

@@ -123,13 +123,13 @@ export function computeLevels(bars, opts = {}) {
 }
 
 /** Remove auto S/R shapes — only the given timeframe's, or all of them. */
-export const clearLevels = ({ timeframe } = {}) => clearTagged({ tag: LEVEL_TAG, kind: KIND, timeframe });
+export const clearLevels = ({ timeframe, chart } = {}) => clearTagged({ tag: LEVEL_TAG, kind: KIND, timeframe, chart });
 
 /**
  * Draw computed levels on the chart (caller clears the timeframe first).
- * ctx: { apiPath, resolution, bars, o } — o supplies colors and `zones`.
+ * ctx: { apiPath, resolution, chart, bars, o } — chart from loadChart; o supplies colors and `zones`.
  */
-export async function renderLevels(result, { apiPath, resolution, bars, o }) {
+export async function renderLevels(result, { apiPath, resolution, chart, bars, o }) {
   const tf = tfLabel(resolution);
   const drawn = [];
   const all = [...result.resistances, ...result.supports];
@@ -147,7 +147,7 @@ export async function renderLevels(result, { apiPath, resolution, bars, o }) {
       textcolor: color,
       horzLabelsAlign: 'right',
       vertLabelsAlign: level.type === 'support' ? 'bottom' : 'top',
-    }, label, { tf, kind: KIND });
+    }, label, { tf, kind: KIND, chart });
     const entry = { ...level, price: Number(fmt(level.price)), entity_id };
 
     if (o.zones) {
@@ -159,7 +159,7 @@ export async function renderLevels(result, { apiPath, resolution, bars, o }) {
         { time: bars[bars.length - 1].time, price: Math.min(level.zone_low, level.price - half) },
       ], 'rectangle', {
         color, backgroundColor: color, fillBackground: true, transparency: 85, linewidth: 0,
-      }, `${LEVEL_TAG} ${tf} zone`, { tf, kind: KIND });
+      }, `${LEVEL_TAG} ${tf} zone`, { tf, kind: KIND, chart });
     }
     drawn.push(entry);
   }
@@ -171,18 +171,19 @@ export async function renderLevels(result, { apiPath, resolution, bars, o }) {
 
 export async function drawLevels(opts = {}) {
   const o = resolveOptions(opts);
-  const { apiPath, info, bars } = await loadChart(o);
+  const { apiPath, info, chart, bars, bars_note } = await loadChart(o);
 
   // Compute before clearing, so a failure leaves the previous levels in place.
   const result = computeLevels(bars, o);
-  const cleared = await clearLevels({ timeframe: info.resolution });
-  const drawn = await renderLevels(result, { apiPath, resolution: info.resolution, bars, o });
+  const cleared = await clearLevels({ timeframe: info.resolution, chart });
+  const drawn = await renderLevels(result, { apiPath, resolution: info.resolution, chart, bars, o });
 
   return {
     success: true,
     symbol: info.symbol,
     timeframe: info.resolution,
     bars_used: bars.length,
+    ...(bars_note ? { bars_note } : {}),
     last_close: result.last_close,
     atr: result.atr,
     removed_previous: cleared.removed,

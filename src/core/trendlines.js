@@ -147,13 +147,13 @@ export function computeTrendlines(bars, opts = {}) {
 }
 
 /** Remove auto trend lines — only the given timeframe's, or all of them. */
-export const clearTrendlines = ({ timeframe } = {}) => clearTagged({ tag: TREND_TAG, kind: KIND, timeframe });
+export const clearTrendlines = ({ timeframe, chart } = {}) => clearTagged({ tag: TREND_TAG, kind: KIND, timeframe, chart });
 
 /**
  * Draw computed trend lines on the chart (caller clears the timeframe first).
- * ctx: { apiPath, resolution, o } — o supplies colors.
+ * ctx: { apiPath, resolution, chart, o } — chart from loadChart; o supplies colors.
  */
-export async function renderTrendlines(result, { apiPath, resolution, o }) {
+export async function renderTrendlines(result, { apiPath, resolution, chart, o }) {
   const tf = tfLabel(resolution);
   const drawn = [];
   const all = [...result.downtrends, ...result.uptrends];
@@ -173,7 +173,7 @@ export async function renderTrendlines(result, { apiPath, resolution, o }) {
       textcolor: color,
       horzLabelsAlign: 'right',
       vertLabelsAlign: up ? 'bottom' : 'top',
-    }, label, { tf, kind: KIND });
+    }, label, { tf, kind: KIND, chart });
     drawn.push({ ...line, current_price: Number(fmt(line.current_price)), entity_id });
   }
   return {
@@ -184,18 +184,19 @@ export async function renderTrendlines(result, { apiPath, resolution, o }) {
 
 export async function drawTrendlines(opts = {}) {
   const o = resolveOptions(opts);
-  const { apiPath, info, bars } = await loadChart(o);
+  const { apiPath, info, chart, bars, bars_note } = await loadChart(o);
 
   // Compute before clearing, so a failure leaves the previous lines in place.
   const result = computeTrendlines(bars, o);
-  const cleared = await clearTrendlines({ timeframe: info.resolution });
-  const drawn = await renderTrendlines(result, { apiPath, resolution: info.resolution, o });
+  const cleared = await clearTrendlines({ timeframe: info.resolution, chart });
+  const drawn = await renderTrendlines(result, { apiPath, resolution: info.resolution, chart, o });
 
   return {
     success: true,
     symbol: info.symbol,
     timeframe: info.resolution,
     bars_used: bars.length,
+    ...(bars_note ? { bars_note } : {}),
     last_close: result.last_close,
     atr: result.atr,
     removed_previous: cleared.removed,

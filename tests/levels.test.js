@@ -6,7 +6,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { atr, findPivots, computeLevels, resolveOptions, DEFAULTS, tfLabel } from '../src/core/levels.js';
+import { atr, findPivots, computeLevels, resolveOptions, clearLevels, DEFAULTS, tfLabel } from '../src/core/levels.js';
 
 const bar = (i, high, low, close = (high + low) / 2) => ({ time: 1700000000 + i * 3600, open: close, high, low, close, volume: 1 });
 
@@ -130,6 +130,20 @@ describe('resolveOptions', () => {
     assert.throws(() => resolveOptions({ tolerance_atr: 0 }), /tolerance_atr/);
     assert.throws(() => resolveOptions({ zones: 'false' }), /zones/);
     assert.throws(() => resolveOptions({ bars: 20, pivot_left: 50, pivot_right: 50 }), /at least pivot_left \+ pivot_right \+ 1/);
+    assert.throws(() => resolveOptions({ days: 0 }), /days must be an integer/);
+    assert.throws(() => resolveOptions({ days: 1.5 }), /days must be an integer/);
+  });
+
+  it('rejects an empty clear timeframe instead of clearing every timeframe', async () => {
+    await assert.rejects(() => clearLevels({ timeframe: '' }), /non-empty string/);
+    await assert.rejects(() => clearLevels({ timeframe: '  ' }), /non-empty string/);
+  });
+
+  it('records whether bars was given, so daily charts know to use the calendar lookback', () => {
+    assert.equal(resolveOptions({}).bars_explicit, false);
+    assert.equal(resolveOptions({ bars: undefined }).bars_explicit, false);
+    assert.equal(resolveOptions({ bars: 300 }).bars_explicit, true);
+    assert.equal(resolveOptions({ days: 365 }).days, 365);
   });
 });
 

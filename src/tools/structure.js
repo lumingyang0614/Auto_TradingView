@@ -7,6 +7,7 @@ const common = {
   symbol: z.string().optional().describe('Switch to this symbol first, e.g. "BINANCE:DOGEUSDT"'),
   timeframe: z.string().optional().describe('Switch to this timeframe first, e.g. "15", "240", "D"'),
   bars: z.coerce.number().int().min(20).max(2000).optional().describe('Bars to analyze (default 500)'),
+  days: z.coerce.number().int().min(1).max(36500).optional().describe('Calendar days to analyze instead of a bar count (daily charts default to 730, two years, unless bars is given)'),
   pivot_left: z.coerce.number().int().min(1).optional().describe('Bars left of a swing pivot'),
   pivot_right: z.coerce.number().int().min(1).optional().describe('Bars right of a swing pivot'),
   tolerance_atr: z.coerce.number().positive().optional().describe('Touch/break tolerance as ATR multiple (default 0.5)'),
@@ -25,7 +26,7 @@ export function registerStructureTools(server) {
   }, run(args => tri.drawTriangles(args)));
 
   server.tool('draw_tri_clear', 'Remove auto triangle/wedge drawings. Pass timeframe to remove only that timeframe\'s.', {
-    timeframe: z.string().optional().describe('Only clear this timeframe, e.g. "240", "D". Omit to clear all.'),
+    timeframe: z.string().trim().min(1).optional().describe('Only clear this timeframe, e.g. "240", "D". Omit to clear all.'),
   }, run(({ timeframe }) => tri.clearTriangles({ timeframe })));
 
   server.tool('draw_structure', 'Draw support/resistance levels, trend lines and triangles for one timeframe in one pass (meant for 1D / 1W). Replaces previous auto drawings of that timeframe.', {
@@ -38,10 +39,10 @@ export function registerStructureTools(server) {
     min_range_bars: z.coerce.number().int().min(10).optional().describe('Minimum bars inside the range to look for patterns (default 30)'),
   }, run(args => core.drawMicro(args)));
 
-  server.tool('draw_watchlist_structure', 'For every watchlist symbol (or the given symbols): draw full structure (S/R, trend lines, triangles) on 1D and 1W plus the micro view on 15m and 1H. Slow — several seconds per symbol. Restores the original chart afterwards.', {
+  server.tool('draw_watchlist_structure', 'For every watchlist symbol (or the given symbols): draw full structure (S/R, trend lines, triangles) on 1D and 1W plus the micro view on 1H. Slow — several seconds per symbol. Restores the original chart afterwards.', {
     symbols: z.array(z.string()).optional().describe('Symbols to process instead of the watchlist'),
     timeframes: z.array(z.string()).optional().describe('Full-structure timeframes (default ["D", "W"]; [] to skip)'),
-    micro_timeframes: z.array(z.string()).optional().describe('Micro view timeframes (default ["15", "60"]; [] to skip)'),
-    clear_timeframes: z.array(z.string()).optional().describe('Remove auto drawings of these timeframes, e.g. ["240"]'),
+    micro_timeframes: z.array(z.string()).optional().describe('Micro view timeframes (default ["60"]; [] to skip)'),
+    clear_timeframes: z.array(z.string().trim().min(1)).optional().describe('Remove auto drawings of these timeframes, e.g. ["240"]'),
   }, run(args => core.drawWatchlist(args)));
 }

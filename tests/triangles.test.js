@@ -136,4 +136,11 @@ describe('computeMicro', () => {
     assert.match(m.range.note, /no trend\/triangle check/);
     assert.equal(m.triangles.patterns.length, 0);
   });
+
+  it('skips pattern search when the range is shorter than one pivot window', () => {
+    const bars = Array.from({ length: 100 }, (_, i) => ({ time: i * 60, open: 10, high: 11, low: 9, close: 10 }));
+    const m = computeMicro(bars, { pivot_left: 20, pivot_right: 20, recent_bars: 30, min_range_bars: 30 });
+    assert.equal(m.range.bars, 30);
+    assert.match(m.range.note, /need 41/);
+  });
 });

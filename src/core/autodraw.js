@@ -14,6 +14,10 @@ import { setSymbol, setTimeframe } from './chart.js';
 // registry also covers shape types that do not expose text via getProperties().
 const PAGE_REGISTRY = 'window.__autoSRIds';
 export const MAX_BARS = 2000;
+// Daily charts are analyzed over this calendar lookback instead of a bar count
+// (two years is ~500 stock sessions but ~730 crypto days).
+export const DAILY_LOOKBACK_DAYS = 730;
+const DAY = 86400;
 const READY_TIMEOUT = 15000;
 
 /**
@@ -38,6 +42,11 @@ export function validateOptions(opts, defaults, intRanges) {
   for (const [k, v] of Object.entries(defaults)) {
     if (typeof v === 'boolean' && typeof o[k] !== 'boolean') throw new Error(`${k} must be a boolean, got ${opts[k]}`);
   }
+  if (o.days != null && (!Number.isInteger(o.days) || o.days < 1 || o.days > 36500)) {
+    throw new Error(`days must be an integer between 1 and 36500, got ${opts.days}`);
+  }
+  // An explicit bar count opts out of the daily calendar lookback.
+  o.bars_explicit = opts.bars !== undefined && opts.bars !== null;
   for (const k of ['symbol', 'timeframe']) {
     if (o[k] !== undefined && (typeof o[k] !== 'string' || !o[k].trim())) throw new Error(`${k} must be a non-empty string`);
   }
@@ -120,6 +129,24 @@ async function chartInfo(apiPath) {
   })()`);
 }
 
+// Throws inside the page unless the chart still shows `expect` ({ symbol, resolution? }) and
+// is not switching away: the loaded series, the requested symbol/timeframe and the load state
+// must all agree. So a chart switched after its bars were read is never cleared or drawn on.
+// Needs SERIES_STATE.
+const chartGuard = expect => (expect ? `
+  var expect = ${JSON.stringify(expect)};
+  var api = ${KNOWN_PATHS.chartApi};
+  var tick = function(s) { return String(s).toUpperCase().split(':').pop(); };
+  var norm = function(tf) { return String(tf).toUpperCase().replace(/^([DWM])$/, '1$1'); };
+  var settled = !!ms.isCompleted() && !ms.isLoading();
+  if (loaded !== expect.symbol || tick(api.symbol()) !== tick(expect.symbol) || !settled
+      || (expect.resolution && (norm(ms.interval()) !== norm(expect.resolution) || norm(api.resolution()) !== norm(expect.resolution)))) {
+    throw new Error('Chart changed: expected ' + expect.symbol + ' ' + (expect.resolution || '')
+      + ', now ' + loaded + ' ' + ms.interval() + ' (requested ' + api.symbol() + ' ' + api.resolution() + (settled ? '' : ', loading') + ')');
+  }` : '');
+
+const ticker = sym => String(sym).toUpperCase().split(':').pop();
+
 // "DOGEUSDT" matches any exchange; "BINANCE:DOGEUSDT" must match exactly.
 function symbolMatches(actual, wanted) {
   if (!wanted) return true;
@@ -137,7 +164,8 @@ const sameChart = (a, b) => !!a && !!b && a.symbol === b.symbol && a.requested =
 async function waitForChart(apiPath, symbol, timeframe) {
   const start = Date.now();
   let info = null;
-  const ready = i => i && i.completed && i.bar_count > 0
+  // The loaded series must be the requested symbol (another exchange's feed of the same ticker is fine).
+  const ready = i => i && i.completed && i.bar_count > 0 && ticker(i.symbol) === ticker(i.requested)
     && symbolMatches(i.symbol, symbol) && symbolMatches(i.requested, symbol)
     && (!timeframe || normalizeTf(i.resolution) === normalizeTf(timeframe));
   while (Date.now() - start < READY_TIMEOUT) {
@@ -155,6 +183,55 @@ async function waitForChart(apiPath, symbol, timeframe) {
   const hint = symbol && info?.symbol && symbolMatches(info.symbol, String(symbol).split(':').pop()) && !symbolMatches(info.symbol, symbol)
     ? ` (TradingView switched to ${info.symbol}; pass "${info.symbol}" or just the ticker)` : '';
   throw new Error(`Chart not ready for ${symbol || '(current symbol)'} ${timeframe || ''} — currently ${info?.symbol} ${info?.resolution} with ${info?.bar_count || 0} bars${hint}`);
+}
+
+const HISTORY_TIMEOUT = 20000;
+const HISTORY_STALL = 3000;
+
+const historyState = () => evaluate(`(function() {
+  var ms = ${MAIN_SERIES};
+  var flags = ms._lastCompleteFlags;
+  var b = ms.bars();
+  var first = b.size() ? b.valueAt(b.firstIndex()) : null;
+  var last = b.size() ? b.valueAt(b.lastIndex()) : null;
+  return {
+    size: b.size(),
+    first: first ? first[0] : null,
+    last: last ? last[0] : null,
+    end: typeof ms.endOfData === 'function' && !!ms.endOfData(),
+    reason: flags && flags.data_completed ? String(flags.data_completed) : null,
+  };
+})()`);
+
+/**
+ * TradingView first loads only ~300 bars. Ask for older history until `count`
+ * bars are loaded (or, with `since`, until the first bar is at or before that
+ * unix time, up to MAX_BARS), the series reports the end of its data (listing
+ * start, or "limit" for the plan's history cap), a request brings nothing new,
+ * or HISTORY_TIMEOUT runs out.
+ */
+async function ensureHistory(count, since = null) {
+  const deadline = Date.now() + HISTORY_TIMEOUT;
+  const need = s => (since != null ? s.first > since && s.size < MAX_BARS : s.size < count);
+  let s = await historyState();
+  while (need(s) && !s.end && Date.now() < deadline) {
+    const before = s.size;
+    const more = since != null ? Math.min(500, MAX_BARS - before) : count - before;
+    await evaluate(`${MAIN_SERIES}.requestMoreData(${more})`);
+    const stall = Math.min(Date.now() + HISTORY_STALL, deadline);
+    do {
+      await new Promise(r => setTimeout(r, 250));
+      s = await historyState();
+    } while (s.size === before && !s.end && Date.now() < stall);
+    if (s.size === before) break;
+  }
+}
+
+/** Why the read came up short — from the series state at the time of the read. */
+async function historyWhy() {
+  const s = await historyState();
+  if (s.size >= MAX_BARS) return `${MAX_BARS}-bar cap`;
+  return !s.end ? 'more history did not load' : s.reason === 'limit' ? 'plan history limit' : 'end of history';
 }
 
 async function readBars(apiPath, count) {
@@ -179,58 +256,119 @@ async function readBars(apiPath, count) {
 }
 
 /**
- * Optionally switch symbol/timeframe, wait for the chart, and read `o.bars` bars,
- * verifying the chart did not change in between. Returns { apiPath, info, bars }.
- * `o.match_symbol` (e.g. just the ticker) overrides what the loaded chart must
- * match — used when TradingView may substitute another exchange's feed.
+ * Optionally switch symbol/timeframe and wait until the chart has loaded it.
+ * `o.match_symbol` (e.g. just the ticker) overrides what the loaded chart must match.
+ * Returns { apiPath, info, chart }.
  */
-export async function loadChart(o) {
+export async function focusChart(o) {
   const apiPath = await getChartApi();
   if (o.symbol) await setSymbol({ symbol: o.symbol });
   if (o.timeframe) await setTimeframe({ timeframe: o.timeframe });
   const info = await waitForChart(apiPath, o.match_symbol || o.symbol, o.timeframe);
-  const data = await readBars(apiPath, o.bars);
+  return { apiPath, info, chart: { symbol: info.symbol, resolution: info.resolution } };
+}
+
+/**
+ * Optionally switch symbol/timeframe, wait for the chart, load older history until
+ * `o.bars` bars — or, on daily charts (or with `o.days`), `days` calendar days
+ * (default DAILY_LOOKBACK_DAYS unless `bars` was given) — are available, and read them,
+ * verifying the chart did not change in between. Returns { apiPath, info, chart, bars }
+ * (`chart` is the identity to pass to createShape / clearTagged),
+ * plus `bars_note` when less history than requested exists.
+ * `o.match_symbol` (e.g. just the ticker) overrides what the loaded chart must
+ * match — used when TradingView may substitute another exchange's feed.
+ */
+export async function loadChart(o) {
+  const { apiPath, info: first } = await focusChart(o);
+  const wanted = o.match_symbol || o.symbol;
+  const days = o.days ?? (!o.bars_explicit && normalizeTf(first.resolution) === '1D' ? DAILY_LOOKBACK_DAYS : null);
+  let since = null;
+  if (days) {
+    const { last } = await historyState();
+    since = last - days * DAY;
+  }
+  await ensureHistory(o.bars, since);
+  // Wait again so the older bars have settled, on the same chart.
+  const info = await waitForChart(apiPath, wanted, o.timeframe);
+  if (!sameChart(info, first)) {
+    throw new Error(`Chart changed while loading history: expected ${first.symbol} ${first.resolution}, got ${info.symbol} ${info.resolution}`);
+  }
+  const data = await readBars(apiPath, since != null ? MAX_BARS : o.bars);
   if (!data.completed || !sameChart(data, info)) {
     throw new Error(`Chart changed while reading bars: expected ${info.symbol} ${info.resolution}, got ${data.symbol} ${data.resolution}`);
   }
-  return { apiPath, info, bars: data.bars };
+  let bars = data.bars;
+  let bars_note = null;
+  if (since != null) {
+    bars = bars.filter(b => b.time >= since);
+    // A few days of slack for weekends and holidays at the cutoff.
+    const covered = Math.round((bars[bars.length - 1].time - bars[0].time) / DAY);
+    if (bars[0].time > since + 10 * DAY) bars_note = `Only ${covered} of ${days} days available (${await historyWhy()})`;
+  } else if (bars.length < o.bars) {
+    bars_note = `Only ${bars.length} of ${o.bars} bars available (${await historyWhy()})`;
+  }
+  const chart = { symbol: info.symbol, resolution: info.resolution };
+  return { apiPath, info, chart, bars, ...(bars_note ? { bars_note } : {}) };
 }
 
-/** Create a shape and record it in the page registry under { tf, kind }. */
-export async function createShape(apiPath, points, shape, overrides, text, { tf, kind }) {
+/**
+ * Create a shape on `chart` ({ symbol, resolution } from loadChart) and record it
+ * in the page registry under { tf, kind, symbol }. Throws if the chart changed.
+ */
+export async function createShape(apiPath, points, shape, overrides, text, { tf, kind, chart }) {
+  if (!chart?.symbol) throw new Error('createShape needs the expected chart');
   const opts = JSON.stringify({ shape, overrides, text, lock: false, disableUndo: false });
   const method = points.length > 1 ? 'createMultipointShape' : 'createShape';
   const arg = JSON.stringify(points.length > 1 ? points : points[0]);
+  const entry = JSON.stringify({ tf, kind });
   // Newer TradingView builds return a Promise<entityId>, older ones the id itself.
-  const id = await evaluateAsync(`Promise.resolve(${apiPath}.${method}(${arg}, ${opts})).then(function(id) { return id || null; })`);
+  const id = await evaluateAsync(`(function() {
+    ${SERIES_STATE}
+    ${chartGuard(chart)}
+    return Promise.resolve(${apiPath}.${method}(${arg}, ${opts})).then(function(id) {
+      if (id) (${PAGE_REGISTRY} = ${PAGE_REGISTRY} || []).push(Object.assign(${entry}, { id: id, symbol: loaded }));
+      return id || null;
+    });
+  })()`);
   if (!id) throw new Error(`TradingView did not create the ${shape} shape`);
-  await evaluate(`(${PAGE_REGISTRY} = ${PAGE_REGISTRY} || []).push(${JSON.stringify({ id, tf, kind })})`);
   return id;
 }
 
 /**
- * Remove shapes of one `kind` (registered ID, or text starting with `tag`).
- * With a timeframe, only that timeframe's shapes are removed; without, all of that kind.
+ * Remove shapes of one `kind` (registered ID, or text starting with `tag`) from the
+ * current symbol. With a timeframe, only that timeframe's shapes are removed; without,
+ * all of that kind. With `chart` ({ symbol, resolution? }), throws if the chart changed.
  * Registry entries from before `kind` existed (bare strings, or objects without kind)
- * were all S/R levels, so they count as kind "level".
+ * were all S/R levels, so they count as kind "level". Entries recorded on another
+ * symbol are left alone: its shapes are not visible until the chart is back on it.
  */
-export async function clearTagged({ tag, kind, timeframe }) {
+export async function clearTagged({ tag, kind, timeframe, chart }) {
+  if (timeframe !== undefined && timeframe !== null && (typeof timeframe !== 'string' || !timeframe.trim())) {
+    throw new Error('timeframe must be a non-empty string (omit it to clear all timeframes)');
+  }
   const apiPath = await getChartApi();
   const scope = timeframe ? tfLabel(timeframe) : null;
   const prefix = scope ? `${tag} ${scope} ` : `${tag} `;
   const result = await evaluate(`
     (function() {
       var api = ${apiPath};
+      ${SERIES_STATE}
+      ${chartGuard(chart)}
       var scope = ${JSON.stringify(scope)};
       var prefix = ${JSON.stringify(prefix)};
       var kind = ${JSON.stringify(kind)};
+      var visible = api.getAllShapes().map(function(s) { return s.id; });
       var registry = (${PAGE_REGISTRY} || []).map(function(e) {
-        if (typeof e === 'string') return { id: e, tf: null, kind: 'level' };
-        return { id: e.id, tf: e.tf, kind: e.kind || 'level' };
+        if (typeof e === 'string') return { id: e, tf: null, kind: 'level', symbol: null };
+        return { id: e.id, tf: e.tf, kind: e.kind || 'level', symbol: e.symbol || null };
       });
+      // Entries without a symbol predate symbol tracking: they are ours if visible here.
+      var mine = function(e) { return e.symbol ? e.symbol === loaded : visible.indexOf(e.id) !== -1; };
+      var others = registry.filter(function(e) { return !mine(e); });
+      var own = registry.filter(mine).map(function(e) { return { id: e.id, tf: e.tf, kind: e.kind, symbol: loaded }; });
       var inScope = function(e) { return e.kind === kind && (!scope || e.tf === scope); };
-      var targets = api.getAllShapes().map(function(s) { return s.id; }).filter(function(id) {
-        var entry = registry.filter(function(e) { return e.id === id; })[0];
+      var targets = visible.filter(function(id) {
+        var entry = own.filter(function(e) { return e.id === id; })[0];
         if (entry) return inScope(entry);
         try {
           var props = api.getShapeById(id).getProperties();
@@ -241,11 +379,11 @@ export async function clearTagged({ tag, kind, timeframe }) {
       var existing = api.getAllShapes().map(function(s) { return s.id; });
       // Keep tracking out-of-scope entries and anything that survived, so the next clear can retry it.
       var left = targets.filter(function(id) { return existing.indexOf(id) !== -1; });
-      ${PAGE_REGISTRY} = registry.filter(function(e) {
+      ${PAGE_REGISTRY} = others.concat(own.filter(function(e) {
         return existing.indexOf(e.id) !== -1 && (!inScope(e) || left.indexOf(e.id) !== -1);
-      }).concat(left.filter(function(id) {
-        return !registry.some(function(e) { return e.id === id; });
-      }).map(function(id) { return { id: id, tf: scope, kind: kind }; }));
+      })).concat(left.filter(function(id) {
+        return !own.some(function(e) { return e.id === id; });
+      }).map(function(id) { return { id: id, tf: scope, kind: kind, symbol: loaded }; }));
       return { removed: targets.length - left.length, left: left.length };
     })()
   `);

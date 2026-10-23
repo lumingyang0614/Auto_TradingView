@@ -173,14 +173,14 @@ export function computeTriangles(bars, opts = {}) {
 }
 
 /** Remove auto triangle drawings — only the given timeframe's, or all of them. */
-export const clearTriangles = ({ timeframe } = {}) => clearTagged({ tag: TRIANGLE_TAG, kind: KIND, timeframe });
+export const clearTriangles = ({ timeframe, chart } = {}) => clearTagged({ tag: TRIANGLE_TAG, kind: KIND, timeframe, chart });
 
 /**
  * Draw computed patterns on the chart (caller clears the timeframe first).
  * Each boundary runs from its first anchor to the last bar, where the lines
  * are closest — the apex itself lies in the future.
  */
-export async function renderTriangles(result, { apiPath, resolution, o }) {
+export async function renderTriangles(result, { apiPath, resolution, chart, o }) {
   const tf = tfLabel(resolution);
   const drawn = [];
   for (const pat of result.patterns) {
@@ -200,7 +200,7 @@ export async function renderTriangles(result, { apiPath, resolution, o }) {
         textcolor: o.color,
         horzLabelsAlign: 'right',
         vertLabelsAlign: 'top',
-      }, label, { tf, kind: KIND });
+      }, label, { tf, kind: KIND, chart });
     }
     drawn.push({
       ...pat,
@@ -215,18 +215,19 @@ export async function renderTriangles(result, { apiPath, resolution, o }) {
 
 export async function drawTriangles(opts = {}) {
   const o = resolveOptions(opts);
-  const { apiPath, info, bars } = await loadChart(o);
+  const { apiPath, info, chart, bars, bars_note } = await loadChart(o);
 
   // Compute before clearing, so a failure leaves the previous patterns in place.
   const result = computeTriangles(bars, o);
-  const cleared = await clearTriangles({ timeframe: info.resolution });
-  const drawn = await renderTriangles(result, { apiPath, resolution: info.resolution, o });
+  const cleared = await clearTriangles({ timeframe: info.resolution, chart });
+  const drawn = await renderTriangles(result, { apiPath, resolution: info.resolution, chart, o });
 
   return {
     success: true,
     symbol: info.symbol,
     timeframe: info.resolution,
     bars_used: bars.length,
+    ...(bars_note ? { bars_note } : {}),
     last_close: result.last_close,
     atr: result.atr,
     removed_previous: cleared.removed,

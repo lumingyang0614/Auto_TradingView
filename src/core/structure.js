@@ -7,18 +7,19 @@
  *                    recent bars that have stayed between those two levels.
  * drawWatchlist()  — run both over every watchlist symbol.
  */
-import { MAX_BARS, validateOptions, loadChart } from './autodraw.js';
+import { MAX_BARS, validateOptions, loadChart, focusChart } from './autodraw.js';
 import * as levels from './levels.js';
 import * as trend from './trendlines.js';
 import * as tri from './triangles.js';
 import * as chart from './chart.js';
 import * as watchlist from './watchlist.js';
 
-const clearAll = async timeframe => {
+// `chart` ({ symbol, resolution? }) makes every clear verify the chart has not changed.
+const clearAll = async (timeframe, chart) => {
   const results = [
-    await levels.clearLevels({ timeframe }),
-    await trend.clearTrendlines({ timeframe }),
-    await tri.clearTriangles({ timeframe }),
+    await levels.clearLevels({ timeframe, chart }),
+    await trend.clearTrendlines({ timeframe, chart }),
+    await tri.clearTriangles({ timeframe, chart }),
   ];
   return results.reduce((s, r) => s + r.removed, 0);
 };
@@ -29,20 +30,21 @@ export async function drawStructure(opts = {}) {
   const lo = levels.resolveOptions(opts);
   const to = trend.resolveOptions(opts);
   const xo = tri.resolveOptions(opts);
-  const { apiPath, info, bars } = await loadChart(lo);
+  const { apiPath, info, chart: target, bars, bars_note } = await loadChart(lo);
 
   // Compute everything before clearing, so a failure leaves the previous drawings in place.
   const lv = levels.computeLevels(bars, lo);
   const tl = trend.computeTrendlines(bars, to);
   const tr = tri.computeTriangles(bars, xo);
-  const removed = await clearAll(info.resolution);
-  const ctx = { apiPath, resolution: info.resolution, bars };
+  const removed = await clearAll(info.resolution, target);
+  const ctx = { apiPath, resolution: info.resolution, chart: target, bars };
 
   return {
     success: true,
     symbol: info.symbol,
     timeframe: info.resolution,
     bars_used: bars.length,
+    ...(bars_note ? { bars_note } : {}),
     last_close: lv.last_close,
     removed_previous: removed,
     ...(await levels.renderLevels(lv, { ...ctx, o: lo })),
@@ -116,6 +118,8 @@ export function computeMicro(bars, opts = {}) {
 
   const n = bars.length;
   const tol = lv.tolerance;
+  // The inner trend/triangle searches need at least one full pivot window.
+  const minRange = Math.max(o.min_range_bars, o.pivot_left + o.pivot_right + 1);
   let si = 0;
   let ri = 0;
   let start;
@@ -128,7 +132,7 @@ export function computeMicro(bars, opts = {}) {
       if (close < support - tol || close > resistance + tol) break;
       start--;
     }
-    if (n - start >= o.min_range_bars || start === 0 || n - start >= o.recent_bars) break;
+    if (n - start >= minRange || start === 0 || n - start >= o.recent_bars) break;
     const exit = bars[start - 1].close;
     if (exit > resistance + tol && ri < ress.length) ri++;
     else if (exit < support - tol && si < sups.length) si++;
@@ -150,8 +154,8 @@ export function computeMicro(bars, opts = {}) {
     trendlines: { uptrends: [], downtrends: [] },
     triangles: { patterns: [] },
   };
-  if (range.length < o.min_range_bars) {
-    result.range.note = `Only ${range.length} bars inside the range (need ${o.min_range_bars}) — no trend/triangle check`;
+  if (range.length < minRange) {
+    result.range.note = `Only ${range.length} bars inside the range (need ${minRange}) — no trend/triangle check`;
     return result;
   }
   const inner = { ...shared, min_span: o.min_span };
@@ -163,16 +167,17 @@ export function computeMicro(bars, opts = {}) {
 /** Draw the small-timeframe structure (default 15m) on the chart. */
 export async function drawMicro(opts = {}) {
   const o = resolveMicroOptions(opts);
-  const { apiPath, info, bars } = await loadChart(o);
+  const { apiPath, info, chart: target, bars, bars_note } = await loadChart(o);
   const m = computeMicro(bars, o);
-  const removed = await clearAll(info.resolution);
-  const ctx = { apiPath, resolution: info.resolution, bars };
+  const removed = await clearAll(info.resolution, target);
+  const ctx = { apiPath, resolution: info.resolution, chart: target, bars };
 
   return {
     success: true,
     symbol: info.symbol,
     timeframe: info.resolution,
     bars_used: bars.length,
+    ...(bars_note ? { bars_note } : {}),
     last_close: m.levels.last_close,
     removed_previous: removed,
     range: m.range,
@@ -187,6 +192,8 @@ const r2 = v => (v == null ? v : Number(Number(v).toPrecision(6)));
 // Compact per-timeframe summary for batch output.
 function summarize(res) {
   return {
+    bars: res.bars_used,
+    ...(res.bars_note ? { bars_note: res.bars_note } : {}),
     supports: (res.supports || []).map(l => r2(l.price)),
     resistances: (res.resistances || []).map(l => r2(l.price)),
     uptrends: (res.uptrends || []).map(l => r2(l.current_price)),
@@ -199,11 +206,12 @@ function summarize(res) {
 /**
  * Draw structure for every watchlist symbol (or `symbols`): full structure on
  * `timeframes` (default 1D and 1W) plus the micro view on each of `micro_timeframes`
- * (default 15m and 1H). Auto drawings of `clear_timeframes` are removed (e.g.
- * a timeframe no longer scanned). Failures are recorded per symbol and do not
- * stop the run. The chart is returned to its original symbol and timeframe.
+ * (default 1H). Auto drawings of `clear_timeframes` are removed (e.g.
+ * a timeframe no longer scanned), also when nothing is drawn. Failures are
+ * recorded per symbol and do not stop the run. The chart is returned to its
+ * original symbol and timeframe; `restored` reports whether that worked.
  */
-export async function drawWatchlist({ symbols, timeframes = ['D', 'W'], micro_timeframes = ['15', '60'], clear_timeframes = [] } = {}) {
+export async function drawWatchlist({ symbols, timeframes = ['D', 'W'], micro_timeframes = ['60'], clear_timeframes = [] } = {}) {
   const list = symbols?.length ? symbols : (await watchlist.get()).symbols.map(s => s.symbol);
   if (!list.length) throw new Error('Watchlist is empty or the watchlist panel is closed');
   const original = await chart.getState();
@@ -227,11 +235,12 @@ export async function drawWatchlist({ symbols, timeframes = ['D', 'W'], micro_ti
     };
     for (const tf of timeframes) await run(levels.tfLabel(tf), drawStructure, tf);
     for (const tf of micro_timeframes) await run(`${levels.tfLabel(tf)}_micro`, drawMicro, tf);
-    // Drawings belong to the symbol, so clear only once the chart is on it.
-    if (switched && clear_timeframes.length) {
+    // Drawings belong to the symbol, so clear only on it — and verify that on every clear.
+    if (clear_timeframes.length) {
       try {
+        if (!switched) entry.chart_symbol = (await focusChart({ symbol, match_symbol })).info.symbol;
         let removed = 0;
-        for (const tf of clear_timeframes) removed += await clearAll(tf);
+        for (const tf of clear_timeframes) removed += await clearAll(tf, { symbol: entry.chart_symbol });
         entry.cleared = removed;
       } catch (err) {
         entry.cleared = { error: err.message };
@@ -240,11 +249,21 @@ export async function drawWatchlist({ symbols, timeframes = ['D', 'W'], micro_ti
     results.push(entry);
   }
 
+  // Same readiness check as a draw: the main series must actually show the original chart.
+  let restore_error = null;
   try {
-    await chart.setSymbol({ symbol: original.symbol });
-    await chart.setTimeframe({ timeframe: original.resolution });
-  } catch {}
+    await focusChart({ symbol: original.symbol, match_symbol: original.symbol.split(':').pop(), timeframe: original.resolution });
+  } catch (err) {
+    restore_error = err.message;
+  }
 
   const failed = results.filter(r => Object.values(r).some(v => v && v.error)).length;
-  return { success: true, symbols: results.length, with_errors: failed, results };
+  return {
+    success: true,
+    symbols: results.length,
+    with_errors: failed,
+    restored: !restore_error,
+    ...(restore_error ? { restore_error } : {}),
+    results,
+  };
 }
